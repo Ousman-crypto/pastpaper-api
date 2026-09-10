@@ -220,27 +220,27 @@
 #     app.run(debug=True)
 
 
+import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-import sqlite3
 
 app = Flask(__name__)
 CORS(app)
 
-# ============================================
-# DATABASE
-# ============================================
+DATABASE_URL = os.environ.get('DATABASE_URL')
 
 def get_db():
-    conn = sqlite3.connect("papers.db")
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
     return conn
 
 def init_db():
     conn = get_db()
-    conn.execute("""
+    cur = conn.cursor()
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS papers (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            id         SERIAL PRIMARY KEY,
             name       TEXT NOT NULL,
             subject    TEXT NOT NULL,
             year       TEXT,
@@ -249,7 +249,27 @@ def init_db():
         )
     """)
     conn.commit()
+    cur.close()
     conn.close()
+# def get_db():
+#     conn = sqlite3.connect("papers.db")
+#     conn.row_factory = sqlite3.Row
+#     return conn
+
+# def init_db():
+#     conn = get_db()
+#     conn.execute("""
+#         CREATE TABLE IF NOT EXISTS papers (
+#             id         INTEGER PRIMARY KEY AUTOINCREMENT,
+#             name       TEXT NOT NULL,
+#             subject    TEXT NOT NULL,
+#             year       TEXT,
+#             paper_type TEXT,
+#             data       TEXT
+#         )
+#     """)
+#     conn.commit()
+#     conn.close()
 
 # ============================================
 # ROUTES
@@ -261,8 +281,11 @@ def home():
 
 @app.route("/papers")
 def get_papers():
-    conn   = get_db()
-    papers = conn.execute("SELECT * FROM papers").fetchall()
+    conn = get_db()
+    cur  = conn.cursor()
+    cur.execute("SELECT * FROM papers")
+    papers = cur.fetchall()
+    cur.close()
     conn.close()
     return jsonify([dict(p) for p in papers])
 
@@ -279,37 +302,40 @@ def add_paper():
     file_data  = data.get("data", "")
 
     if not name or not subject:
-        return jsonify({"error": "Name and subject are required"}), 400
+        return jsonify({"error": "Name and subject required"}), 400
 
     conn = get_db()
-    conn.execute(
-        "INSERT INTO papers (name, subject, year, paper_type, data) VALUES (?, ?, ?, ?, ?)",
+    cur  = conn.cursor()
+    cur.execute(
+        "INSERT INTO papers (name,subject,year,paper_type,data) VALUES (%s,%s,%s,%s,%s)",
         (name, subject, year, paper_type, file_data)
     )
     conn.commit()
+    cur.close()
     conn.close()
-    return jsonify({"message": "Paper added successfully"}), 201
+    return jsonify({"message": "Paper added"}), 201
 
 @app.route("/papers/edit/<int:paper_id>", methods=["PUT"])
 def edit_paper(paper_id):
-    data = request.get_json()
+    data     = request.get_json()
     new_name = data.get("name")
-    if not new_name:
-        return jsonify({"error": "Name is required"}), 400
-
     conn = get_db()
-    conn.execute("UPDATE papers SET name = ? WHERE id = ?", (new_name, paper_id))
+    cur  = conn.cursor()
+    cur.execute("UPDATE papers SET name=%s WHERE id=%s", (new_name, paper_id))
     conn.commit()
+    cur.close()
     conn.close()
-    return jsonify({"message": "Paper updated"}), 200
+    return jsonify({"message": "Updated"}), 200
 
 @app.route("/papers/delete/<int:paper_id>", methods=["DELETE"])
 def delete_paper(paper_id):
     conn = get_db()
-    conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
+    cur  = conn.cursor()
+    cur.execute("DELETE FROM papers WHERE id=%s", (paper_id,))
     conn.commit()
+    cur.close()
     conn.close()
-    return jsonify({"message": "Paper deleted"}), 200
+    return jsonify({"message": "Deleted"}), 200
 
 # ============================================
 # START
