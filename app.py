@@ -344,6 +344,105 @@
 # if __name__ == "__main__":
 #     app.run(debug=True)
 
+# import os
+# import psycopg2
+# from psycopg2.extras import RealDictCursor
+# from flask import Flask, jsonify, request
+# from flask_cors import CORS
+
+# app = Flask(__name__)
+# CORS(app)
+
+# DATABASE_URL = os.environ.get('DATABASE_URL')
+
+# def get_db():
+#     conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+#     return conn
+
+# def init_db():
+#     conn = get_db()
+#     cur = conn.cursor()
+#     cur.execute("""
+#         CREATE TABLE IF NOT EXISTS papers (
+#             id         SERIAL PRIMARY KEY,
+#             name       TEXT NOT NULL,
+#             subject    TEXT NOT NULL,
+#             year       TEXT,
+#             paper_type TEXT,
+#             data       TEXT
+#         )
+#     """)
+#     conn.commit()
+#     cur.close()
+#     conn.close()
+
+# @app.route("/")
+# def home():
+#     return "PastPapers API is running"
+
+# @app.route("/papers")
+# def get_papers():
+#     conn = get_db()
+#     cur  = conn.cursor()
+#     cur.execute("SELECT * FROM papers")
+#     papers = cur.fetchall()
+#     cur.close()
+#     conn.close()
+#     return jsonify([dict(p) for p in papers])
+
+# @app.route("/add-paper", methods=["POST"])
+# def add_paper():
+#     data = request.get_json()
+#     if not data:
+#         return jsonify({"error": "No data received"}), 400
+#     name       = data.get("name")
+#     subject    = data.get("subject")
+#     year       = data.get("year", "Unknown")
+#     paper_type = data.get("paper_type", "Exam")
+#     file_data  = data.get("data", "")
+#     if not name or not subject:
+#         return jsonify({"error": "Name and subject required"}), 400
+#     conn = get_db()
+#     cur  = conn.cursor()
+#     cur.execute(
+#         "INSERT INTO papers (name,subject,year,paper_type,data) VALUES (%s,%s,%s,%s,%s)",
+#         (name, subject, year, paper_type, file_data)
+#     )
+#     conn.commit()
+#     cur.close()
+#     conn.close()
+#     return jsonify({"message": "Paper added"}), 201
+
+# @app.route("/papers/edit/<int:paper_id>", methods=["PUT"])
+# def edit_paper(paper_id):
+#     data     = request.get_json()
+#     new_name = data.get("name")
+#     if not new_name:
+#         return jsonify({"error": "Name is required"}), 400
+#     conn = get_db()
+#     cur  = conn.cursor()
+#     cur.execute("UPDATE papers SET name=%s WHERE id=%s", (new_name, paper_id))
+#     conn.commit()
+#     cur.close()
+#     conn.close()
+#     return jsonify({"message": "Updated"}), 200
+
+# @app.route("/papers/delete/<int:paper_id>", methods=["DELETE"])
+# def delete_paper(paper_id):
+#     conn = get_db()
+#     cur  = conn.cursor()
+#     cur.execute("DELETE FROM papers WHERE id=%s", (paper_id,))
+#     conn.commit()
+#     cur.close()
+#     conn.close()
+#     return jsonify({"message": "Deleted"}), 200
+
+# # Runs on both local and Render
+# init_db()
+
+# if __name__ == "__main__":
+#     app.run(debug=True)
+
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -367,6 +466,7 @@ def init_db():
             id         SERIAL PRIMARY KEY,
             name       TEXT NOT NULL,
             subject    TEXT NOT NULL,
+            department TEXT,
             year       TEXT,
             paper_type TEXT,
             data       TEXT
@@ -397,6 +497,7 @@ def add_paper():
         return jsonify({"error": "No data received"}), 400
     name       = data.get("name")
     subject    = data.get("subject")
+    department = data.get("department", "")
     year       = data.get("year", "Unknown")
     paper_type = data.get("paper_type", "Exam")
     file_data  = data.get("data", "")
@@ -405,8 +506,8 @@ def add_paper():
     conn = get_db()
     cur  = conn.cursor()
     cur.execute(
-        "INSERT INTO papers (name,subject,year,paper_type,data) VALUES (%s,%s,%s,%s,%s)",
-        (name, subject, year, paper_type, file_data)
+        "INSERT INTO papers (name,subject,department,year,paper_type,data) VALUES (%s,%s,%s,%s,%s,%s)",
+        (name, subject, department, year, paper_type, file_data)
     )
     conn.commit()
     cur.close()
