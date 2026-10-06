@@ -444,6 +444,8 @@
 #     app.run(debug=True)
 
 import os
+import cloudinary
+import cloudinary.uploader
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from flask import Flask, jsonify, request
@@ -451,6 +453,13 @@ from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
+
+# Cloudinary configuration
+cloudinary.config(
+    cloud_name = os.environ.get('CLOUDINARY_CLOUD_NAME'),
+    api_key    = os.environ.get('CLOUDINARY_API_KEY'),
+    api_secret = os.environ.get('CLOUDINARY_API_SECRET')
+)
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
@@ -463,13 +472,14 @@ def init_db():
     cur = conn.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS papers (
-            id         SERIAL PRIMARY KEY,
-            name       TEXT NOT NULL,
-            subject    TEXT NOT NULL,
-            department TEXT,
-            year       TEXT,
-            paper_type TEXT,
-            data       TEXT
+            id          SERIAL PRIMARY KEY,
+            name        TEXT NOT NULL,
+            subject     TEXT NOT NULL,
+            department  TEXT,
+            year        TEXT,
+            paper_type  TEXT,
+            file_url    TEXT,
+            public_id   TEXT
         )
     """)
     conn.commit()
@@ -492,27 +502,40 @@ def get_papers():
 
 @app.route("/add-paper", methods=["POST"])
 def add_paper():
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No data received"}), 400
-    name       = data.get("name")
-    subject    = data.get("subject")
-    department = data.get("department", "")
-    year       = data.get("year", "Unknown")
-    paper_type = data.get("paper_type", "Exam")
-    file_data  = data.get("data", "")
+    name       = request.form.get('name')
+    subject    = request.form.get('subject')
+    department = request.form.get('department', '')
+    year       = request.form.get('year', 'Unknown')
+    file       = request.files.get('file')
+
     if not name or not subject:
         return jsonify({"error": "Name and subject required"}), 400
+
+    if not file:
+        return jsonify({"error": "No file provided"}), 400
+
+    # Upload file to Cloudinary
+    result = cloudinary.uploader.upload(
+        file,
+        folder="pastpapers",
+        resource_type="auto"
+    )
+
+    file_url  = result.get('secure_url')
+    public_id = result.get('public_id')
+    paper_type = 'image' if result.get('resource_type') == 'image' else 'pdf'
+
     conn = get_db()
     cur  = conn.cursor()
     cur.execute(
-        "INSERT INTO papers (name,subject,department,year,paper_type,data) VALUES (%s,%s,%s,%s,%s,%s)",
-        (name, subject, department, year, paper_type, file_data)
+        "INSERT INTO papers (name,subject,department,year,paper_type,file_url,public_id) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+        (name, subject, department, year, paper_type, file_url, public_id)
     )
     conn.commit()
     cur.close()
     conn.close()
-    return jsonify({"message": "Paper added"}), 201
+
+    return jsonify({"message": "Paper added", "url": file_url}), 201
 
 @app.route("/papers/edit/<int:paper_id>", methods=["PUT"])
 def edit_paper(paper_id):
@@ -532,13 +555,18 @@ def edit_paper(paper_id):
 def delete_paper(paper_id):
     conn = get_db()
     cur  = conn.cursor()
+    cur.execute("SELECT public_id FROM papers WHERE id=%s", (paper_id,))
+    paper = cur.fetchone()
+
+    if paper and paper['public_id']:
+        cloudinary.uploader.destroy(paper['public_id'])
+
     cur.execute("DELETE FROM papers WHERE id=%s", (paper_id,))
     conn.commit()
     cur.close()
     conn.close()
     return jsonify({"message": "Deleted"}), 200
 
-# Runs on both local and Render
 init_db()
 
 if __name__ == "__main__":
